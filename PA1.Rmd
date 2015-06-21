@@ -1,0 +1,100 @@
+---
+title: "Peer Assessment I"
+author: "Yujie Ma"
+date: "May 24, 2015"
+output: html_document
+---
+
+#Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+#Load the Data
+First of all, we need to load the data into two datasets: training dataset and testing dataset, so that we can do the cross validation properly.
+
+```{r}
+library(ggplot2)
+library(lattice)
+library(plyr)
+library(dplyr)
+library(splines)
+library(parallel)
+library(survival)
+library(e1071)
+library(gbm)
+library(caret)
+training<-read.csv("pml-training.csv")
+testing<-read.csv("pml-testing.csv")
+```
+
+Let's have a look at the dimension of the data, and the data structure of the "classe" variable
+```{r}
+dim(training)
+dim(testing)
+str(training$classe)
+```
+We can see that there are five different different classes, just like we mentioned in the introduction.
+
+#Choose the Prediction Model
+Let's have a look at the numbers of missing values in the two data sets.
+```{r}
+num_na_test<-c(1:160)
+for (i in 1:160)
+{
+  num_na_test[i]<-sum(is.na(testing[,i]))
+}
+num_na_test
+
+num_na_train<-c(1:160)
+for (i in 1:160)
+{
+  num_na_train[i]<-sum(is.na(training[,i]))
+}
+num_na_train
+```
+We can see that both the training set and the testing set have a lot of missing values.Also in the testing set, if a variable has missing values, then this variable actually has missing value on every single observation.Therefore, for some varibles, their information is totally lost in the testing set. 
+Thus we should not choose these variables to be our features, and we need to move these variables away to build the prediction model. 
+```{r,warning=FALSE}
+training<-tbl_df(training)
+training<-select(training,c(1:11,37:49,60:68,84:86,102,113:124,140,151:160))
+num_na<-c(1:60)
+for (i in 1:60){
+  num_na[i]<-sum(is.na(training[,i]))
+}
+num_na
+```
+Luckily, by removing all the columns missing in the test set from the training set, we don't have any missing values in the new training set anymore. 
+
+We also need to remove unnecessary columns with data.  For example,  when (date/time) an observation happened might not be meaningful here. 
+```{r,warning=FALSE}
+training<-select(training,-cvtd_timestamp,-user_name,-raw_timestamp_part_1,raw_timestamp_part_2,-num_window)
+```
+
+Then let's build the model based on the Boost algorithm without worrying about the missing values and extra columns anymore.
+
+#Build the Boosting model
+Let's build the Boosting model in the training1 set, and do the cross validation in the validate set.
+```{r,warning=FALSE}
+inTrain <- createDataPartition(training$classe,p=0.75,list=FALSE)
+validate = training[inTrain,]
+training1 = training[-inTrain,]
+modFit <- train(classe ~ ., method="gbm",data=training1,verbose=FALSE)
+```
+
+#Cross Validation
+We can use the predicing model we built based on the training set, to predict in the testing set:
+```{r}
+pred<-predict(modFit,newdata=validate)
+```
+
+#Sample error
+We expect the sample error to be less than 1%, let's check if that is true:
+```{r}
+table(pred,validate$classe)
+```
+We can see that the sample errot is obviously lower than 1%, thus our model holds very well.
